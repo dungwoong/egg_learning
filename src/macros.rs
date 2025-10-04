@@ -93,6 +93,7 @@ define_language! {
 **/
 #[macro_export]
 macro_rules! define_language {
+    // some attributes, a visibility e.g. crate or whatever, an enum keyword and then an identifier
     ($(#[$meta:meta])* $vis:vis enum $name:ident
      // annoying parsing hack to parse generic bounds https://stackoverflow.com/a/51580104
     //  $(<$gen:ident $(, $($gen2:ident),*)?>)?
@@ -348,15 +349,21 @@ fn is_not_zero(var: &'static str) -> impl Fn(&mut EGraph, Id, &Subst) -> bool {
 **/
 #[macro_export]
 macro_rules! rewrite {
+    // e.g. rewrite!("add-0"; "(+ 0 ?a)" => "?a") will be replaced with Rewrite::new("add-0", Pattern("(+ 0 ?a)"), Pattern("?a"))
+    // expr is a valid rust expression
+    // tt is a token tree, just grab raw tokens(dunno why but e.g. (+ 0 ?a) isn't a valid expr in rust)
+    // and then, match a list of expressions starting with if, think of * as python * syntax
     (
         $name:expr;
         $lhs:tt => $rhs:tt
         $(if $cond:expr)*
     )  => {{
-        let searcher = $crate::__rewrite!(@parse Pattern $lhs);
+        let searcher = $crate::__rewrite!(@parse Pattern $lhs); // matcher, to find occurrences
+        // $crate is current crate, so it's calling a helper fn
+        // it's calling rewrite macro with @parse to indicate parse. It's like pattern matching
         let core_applier = $crate::__rewrite!(@parse Pattern $rhs);
-        let applier = $crate::__rewrite!(@applier core_applier; $($cond,)*);
-        $crate::Rewrite::new($name.to_string(), searcher, applier).unwrap()
+        let applier = $crate::__rewrite!(@applier core_applier; $($cond,)*); // applier: applies the rule
+        $crate::Rewrite::new($name.to_string(), searcher, applier).unwrap() // rewrite is a name + searcher + applier
     }};
     (
         $name:expr;

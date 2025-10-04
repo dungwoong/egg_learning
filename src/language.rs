@@ -30,11 +30,11 @@ use thiserror::Error;
 ///
 /// See [`SymbolLang`] for quick-and-dirty use cases.
 #[allow(clippy::len_without_is_empty)]
-pub trait Language: Debug + Clone + Eq + Ord + Hash {
+pub trait Language: Debug + Clone + Eq + Ord + Hash { // Language must support Debug, Clone, etc.
     /// Type representing the cases of this language.
     ///
     /// Used for short-circuiting the search for equivalent nodes.
-    type Discriminant: Debug + Clone + Eq + Hash;
+    type Discriminant: Debug + Clone + Eq + Hash; // languages must have a discriminant type that also implements these methods
 
     /// Return the `Discriminant` of this node.
     #[allow(enum_intrinsics_non_enums)]
@@ -43,7 +43,7 @@ pub trait Language: Debug + Clone + Eq + Ord + Hash {
     /// Returns true if this enode matches another enode.
     /// This should only consider the operator and the arity,
     /// not the children `Id`s.
-    fn matches(&self, other: &Self) -> bool;
+    fn matches(&self, other: &Self) -> bool; // traits only define 
 
     /// Returns the children of this e-node.
     fn children(&self) -> &[Id];
