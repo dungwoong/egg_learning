@@ -550,8 +550,10 @@ where
         let start_time = Instant::now();
 
         let mut matches = Vec::new();
-        let mut applied = IndexMap::default();
+        let mut applied = IndexMap::default(); // NOTE hashmap but keeps insertion order(chatGPT)
+        // NOTE the |_| is like a lambda function |x| x + 1 but it's like _: x + 1 yknow
         result = result.and_then(|_| {
+            // NOTE Scheduler searches for rewrites, ok if ok, error if erro
             matches = self
                 .scheduler
                 .search_rewrites(i, &self.egraph, rules, &self.limits)?;
@@ -569,9 +571,10 @@ where
         let apply_time = Instant::now();
 
         result = result.and_then(|_| {
+            // NOTE: so each rewrite rule has a list of matches that it holds
             rules.iter().zip(matches).try_for_each(|(rw, ms)| {
                 let total_matches: usize = ms.iter().map(|m| m.substs.len()).sum();
-                debug!("Applying {} {} times", rw.name, total_matches);
+                debug!("Applying {} {} times", rw.name, total_matches); // NOTE e.g. applying rewrite M times!!
 
                 let actually_matched = self.scheduler.apply_rewrite(i, &mut self.egraph, rw, ms);
                 if actually_matched > 0 {

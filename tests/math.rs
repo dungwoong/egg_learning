@@ -27,6 +27,7 @@ define_language! {
     }
 }
 
+// NOTE this is like ASTSize cost function but it sets cost of diff and integral to 100
 // You could use egg::AstSize, but this is useful for debugging, since
 // it will really try to get rid of the Diff operator
 pub struct MathCostFn;
@@ -45,6 +46,10 @@ impl egg::CostFunction<Math> for MathCostFn {
     }
 }
 
+
+// NOTE: this sets analysis data to the constant value, or None
+// the merge makes sure the analysis data for each eclass is the same, or else something's wrong
+// modify just adds the constant node
 #[derive(Default)]
 pub struct ConstantFold;
 impl Analysis<Math> for ConstantFold {
@@ -163,7 +168,8 @@ pub fn rules() -> Vec<Rewrite> { vec![
     rw!("mul-one";  "?a" => "(* ?a 1)"),
 
     rw!("cancel-sub"; "(- ?a ?a)" => "0"),
-    rw!("cancel-div"; "(/ ?a ?a)" => "1" if is_not_zero("?a")),
+    rw!("cancel-div"; "(/ ?a ?a)" => "1" if is_not_zero("?a")), // NOTE this is an example of a dynamic rewrite
+    // NOTE so what I have with concat shapes isn't even really supported I think
 
     rw!("distribute"; "(* ?a (+ ?b ?c))"        => "(+ (* ?a ?b) (* ?a ?c))"),
     rw!("factor"    ; "(+ (* ?a ?b) (* ?a ?c))" => "(* ?a (+ ?b ?c))"),

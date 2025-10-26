@@ -43,6 +43,7 @@ pub trait Language: Debug + Clone + Eq + Ord + Hash { // Language must support D
     /// Returns true if this enode matches another enode.
     /// This should only consider the operator and the arity,
     /// not the children `Id`s.
+    // NOTE: arity means number of children
     fn matches(&self, other: &Self) -> bool; // traits only define 
 
     /// Returns the children of this e-node.
@@ -473,10 +474,13 @@ impl<L: Language> RecExpr<L> {
     pub(crate) fn compact(mut self) -> Self {
         let mut ids = hashmap_with_capacity::<Id, Id>(self.len());
         let mut set = IndexSet::default();
+        // drain pops nodes, and iterates over them
         for (i, node) in self.nodes.drain(..).enumerate() {
-            let node = node.map_children(|id| ids[&id]);
-            let new_id = set.insert_full(node).0;
-            ids.insert(Id::from(i), Id::from(new_id));
+            // NOTE just takes each id and remaps it, & is just for borrowing
+            // I think RecExpr just has an invariant that children come before parent or whatever
+            let node = node.map_children(|id| ids[&id]); // remap children, we should've already seen children earlier in the loop
+            let new_id = set.insert_full(node).0; // IndexSets give you an enumeration as well as acting like a set
+            ids.insert(Id::from(i), Id::from(new_id)); // remap this node's id
         }
         self.nodes.extend(set);
         self

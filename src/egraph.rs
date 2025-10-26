@@ -359,6 +359,8 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
     /// was obtained (see [`add_uncanoncial`](EGraph::add_uncanonical),
     /// [`add_expr_uncanonical`](EGraph::add_expr_uncanonical))
     pub fn id_to_expr(&self, id: Id) -> RecExpr<L> {
+        // NOTE I think this is after extraction, you want to actually build the expression not as it's show in the egraph.
+        // the cache is there so we don't rebuild the same expr multiple times
         let mut res = Default::default();
         let mut cache = Default::default();
         self.id_to_expr_internal(&mut res, id, &mut cache);
@@ -1256,8 +1258,8 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
             class
                 .nodes
                 .iter_mut()
-                .for_each(|n| n.update_children(|id| uf.find_mut(id)));
-            class.nodes.sort_unstable();
+                .for_each(|n| n.update_children(|id| uf.find_mut(id))); // NOTE children all point at canonical(?)
+            class.nodes.sort_unstable(); // NOTE deduplicate(?)
             class.nodes.dedup();
 
             trimmed += old_len - class.nodes.len();
@@ -1331,17 +1333,19 @@ impl<L: Language, N: Analysis<L>> EGraph<L, N> {
     fn process_unions(&mut self) -> usize {
         let mut n_unions = 0;
 
+        // This is kinda like exactly what the rebuild algorithm is in the paper
         while !self.pending.is_empty() || !self.analysis_pending.is_empty() {
-            while let Some(class) = self.pending.pop() {
+            while let Some(class) = self.pending.pop() { // NOTE take a pending item
                 let mut node = self.nodes[usize::from(class)].clone();
-                node.update_children(|id| self.find_mut(id));
-                if let Some(memo_class) = self.memo.insert(node, class) {
+                node.update_children(|id| self.find_mut(id)); // NOTE Canonicalize the children
+                if let Some(memo_class) = self.memo.insert(node, class) { // if we inserted idk like if there's already a class in here, we perform union
                     let did_something =
                         self.perform_union(memo_class, class, Some(Justification::Congruence));
                     n_unions += did_something as usize;
                 }
             }
 
+            // we can see that they do all rebuilding before all analysis. Ok that makes sense...
             while let Some(class_id) = self.analysis_pending.pop() {
                 let node = self.nodes[usize::from(class_id)].clone();
                 let class_id = self.find_mut(class_id);

@@ -76,9 +76,11 @@ pub type PatternAst<L> = RecExpr<ENodeOrVar<L>>;
 impl<L: Language> PatternAst<L> {
     /// Returns a new `PatternAst` with the variables renames canonically
     pub fn alpha_rename(&self) -> Self {
+        // NOTE e.g. a + b --> x + y instead
         let mut vars = HashMap::<Var, Var>::default();
         let mut new = PatternAst::default();
 
+        // NOTE makes var i, based on how many vars you need in the expr(?)
         fn mkvar(i: usize) -> Var {
             let vs = &["?x", "?y", "?z", "?w"];
             match vs.get(i) {
@@ -87,6 +89,7 @@ impl<L: Language> PatternAst<L> {
             }
         }
 
+        // NOTE They store the vars in the expr under vars, so they just map everything to xyzw basically
         for n in self {
             new.add(match n {
                 ENodeOrVar::ENode(_) => n.clone(),
@@ -198,6 +201,7 @@ pub enum ENodeOrVarParseError<E> {
     BadOp(E),
 }
 
+// if L implements FromOp, we can do this too. L can implement FromOp and Language at the same time
 impl<L: FromOp> FromOp for ENodeOrVar<L> {
     type Error = ENodeOrVarParseError<L::Error>;
 

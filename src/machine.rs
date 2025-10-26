@@ -54,12 +54,13 @@ impl Machine {
         while let Some(instruction) = instructions.next() {
             match instruction {
                 Instruction::Bind { i, out, node } => {
-                    let remaining_instructions = instructions.as_slice();
-                    let eclass = &egraph[self.reg(*i)];
-                    return eclass.for_each_matching_node(node, |matched| {
-                        self.reg.truncate(out.0 as usize);
-                        matched.for_each(|id| self.reg.push(id));
-                        self.run(egraph, remaining_instructions, subst, yield_fn)
+                    let remaining_instructions = instructions.as_slice(); // NOTE get rest of instructions
+                    let eclass = &egraph[self.reg(*i)]; // lookup e-class corresponding to whatever's in register i
+                    return eclass.for_each_matching_node(node, |matched| { // e.g. * (?x, ?y), make sure it's * and 2 children
+                        // like DFS, go back to the branching point
+                        self.reg.truncate(out.0 as usize); // so you want to go back in the tree or something, so you get rid of everything after?
+                        matched.for_each(|id| self.reg.push(id)); // push child ids e.g. +(3, 5) you push 3 and 5 I think
+                        self.run(egraph, remaining_instructions, subst, yield_fn) // run remaining instructions (for each match btw)
                     });
                 }
                 Instruction::Scan { out } => {
@@ -67,32 +68,41 @@ impl Machine {
                     for class in egraph.classes() {
                         self.reg.truncate(out.0 as usize);
                         self.reg.push(class.id);
-                        self.run(egraph, remaining_instructions, subst, yield_fn)?
+                        self.run(egraph, remaining_instructions, subst, yield_fn)? // ? means return val or error if needed
                     }
                     return Ok(());
                 }
+                // continue if i and j are in the same e-class
                 Instruction::Compare { i, j } => {
                     if egraph.find(self.reg(*i)) != egraph.find(self.reg(*j)) {
-                        return Ok(());
+                        return Ok(()); // ok just means to stop the search
                     }
                 }
                 Instruction::Lookup { term, i } => {
+                    // NOTE so lookup only works when you already have the children I guess, so you start w children and then u get the parent...?
                     self.lookup.clear();
                     for node in term {
                         match node {
+                            // node is an operator or literal
                             ENodeOrReg::ENode(node) => {
-                                let look = |i| self.lookup[usize::from(i)];
-                                match egraph.lookup(node.clone().map_children(look)) {
+                                // lookup is a vec of Id
+                                let look = |i| self.lookup[usize::from(i)]; // closure(anonymous function that can capture values from its own scope)
+                                match egraph.lookup(node.clone().map_children(look)) { // all children should be in lookup already(topological order)
+                                    // the e-graph looks up the node and if it finds a matching node it'll return the id
+                                    // NOTE the egraph lookup might just be looking at the hashcons, cuz look essentially canonicalizes the ids I think
                                     Some(id) => self.lookup.push(id),
                                     None => return Ok(()),
                                 }
                             }
                             ENodeOrReg::Reg(r) => {
+                                // register, get canonical e-class id of whatever's in the register and push it
                                 self.lookup.push(egraph.find(self.reg(*r)));
                             }
                         }
                     }
 
+                    // i is the target register for the root of the term
+                    // so if the last item in lookup doesn't match the target register's e-class, we prune this branch
                     let id = egraph.find(self.reg(*i));
                     if self.lookup.last().copied() != Some(id) {
                         return Ok(());
@@ -153,15 +163,16 @@ impl<L: Language> Compiler<L> {
                 ENodeOrVar::ENode(n) => {
                     size = 1;
                     for &child in n.children() {
+                        // NOTE get free vars and subtree size(since we iterate in topological order)
                         free.extend(&self.free_vars[usize::from(child)]);
                         size += self.subtree_size[usize::from(child)];
                     }
                 }
                 ENodeOrVar::Var(v) => {
-                    free.insert(*v);
+                    free.insert(*v); // base case, no children, just insert v
                 }
             }
-            self.free_vars.push(free);
+            self.free_vars.push(free); // so free vars and subtree size stores these items FOR EACH NODe in the pattern
             self.subtree_size.push(size);
         }
     }
@@ -198,23 +209,30 @@ impl<L: Language> Compiler<L> {
     }
 
     fn compile(&mut self, patternbinder: Option<Var>, pattern: &PatternAst<L>) {
-        self.load_pattern(pattern);
+        self.load_pattern(pattern); // NOTE populate free vars and subtree size FOR EACH node in the pattern
         let root = pattern.root();
 
-        let mut next_out = self.next_reg;
+        let mut next_out = self.next_reg; // I dunno bro
 
         // Check if patternbinder already bound in v2r
         // Behavior common to creating a new pattern
         let add_new_pattern = |comp: &mut Compiler<L>| {
             if !comp.instructions.is_empty() {
                 // After first pattern needs scan
+                // NOTE so the first TODO will probably add an instruction to find the root. THEN, we must scan after everytime I guess
                 comp.instructions
                     .push(Instruction::Scan { out: comp.next_reg });
             }
             comp.add_todo(pattern, root, comp.next_reg);
         };
 
+        // NOTE: this is for multipattern
         if let Some(v) = patternbinder {
+            // TODO we can see that add_new_pattern does almost the same thing as the if statement
+            // so if it's not bound yet, we have to do a scan. It just tries to run the remaining instruction set on every e-class
+            // if it IS bound, then we just add a todo of the pattern from node i, ok that makes sense I guess...
+            // I don't get how they deal with shared variables between multiple patterns, but I guess it's not a big issue if I'm porting egg.
+            // the Compare is in add_todo, so maybe that has something to do with it
             if let Some(&i) = self.v2r.get(&v) {
                 // patternbinder already bound
                 self.add_todo(pattern, root, i);
@@ -230,9 +248,14 @@ impl<L: Language> Compiler<L> {
             add_new_pattern(self);
         }
 
+        // NOTE next() takes from todo_nodes btw
         while let Some(((id, reg), node)) = self.next() {
+            // NOTE is_ground_now checks if all the node's children are in registers already
+            // skip leaf nodes cuz we don't need to lookup for those(why?)
             if self.is_ground_now(id) && !node.is_leaf() {
-                let extracted = pattern.extract(id);
+                let extracted = pattern.extract(id); // get subtree rooted at this node(?)
+                // lookup e.g. if we have +(?x 1) and we already have x in registers, we can do a lookup for the +??
+                // I think it's faster than other stuff, so we just do this when we CAN
                 self.instructions.push(Instruction::Lookup {
                     i: reg,
                     term: extracted
@@ -244,6 +267,8 @@ impl<L: Language> Compiler<L> {
                         .collect(),
                 });
             } else {
+                // so if you can't try a lookup, you try a DFS kinda thing where you start to bind stuff. e.g. if + is your next thing, bind to a + if possible, and then look for its children
+                // NOTE so this is where we do binding and comparing and then more binding. It's honestly kinda like a BFS or a priority queue search kinda since next() prioritizes
                 let out = next_out;
                 next_out.0 += node.len() as u32;
 
@@ -285,6 +310,7 @@ impl<L: Language> Program<L> {
     }
 
     pub(crate) fn compile_from_multi_pat(patterns: &[(Var, PatternAst<L>)]) -> Self {
+        // NOTE seems like the vars are new vars that are made, and they bind the root of the pattern to the var(chatGPT)
         let mut compiler = Compiler::new();
         for (var, pattern) in patterns {
             compiler.compile(Some(*var), pattern);

@@ -21,6 +21,7 @@ pub struct EClass<L, D> {
     pub(crate) parents: Vec<Id>,
 }
 
+// NOTE: implement these methods in general.
 impl<L, D> EClass<L, D> {
     /// Returns `true` if the `eclass` is empty.
     pub fn is_empty(&self) -> bool {
@@ -43,6 +44,7 @@ impl<L, D> EClass<L, D> {
     }
 }
 
+// NOTE: implement these methods if L is Language
 impl<L: Language, D> EClass<L, D> {
     /// Iterates over the childless enodes in this eclass.
     pub fn leaves(&self) -> impl Iterator<Item = &L> {
